@@ -14,6 +14,8 @@ import html
 import json
 import os
 import shutil
+import time
+import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
@@ -35,8 +37,20 @@ def fetch(symbol):
     )
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            d = json.load(r)
+        d = None
+        for attempt in range(3):  # 일시적 오류나 요청 제한(429)이면 잠깐 쉬고 재시도
+            try:
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    d = json.load(r)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 404 or attempt == 2:
+                    raise
+                time.sleep(2 * (attempt + 1))
+            except (urllib.error.URLError, TimeoutError):
+                if attempt == 2:
+                    raise
+                time.sleep(2 * (attempt + 1))
         res = d["chart"]["result"][0]
         q = res["indicators"]["quote"][0]
         off = res["meta"].get("gmtoffset", 0)

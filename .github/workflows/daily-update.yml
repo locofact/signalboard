@@ -10,6 +10,8 @@ on:
     - cron: "0 22 * * 1-5"
     - cron: "30 7 * * 1-5"
   workflow_dispatch: # Actions 탭에서 수동 실행 버튼
+  push:
+    branches: [main] # 코드를 올리면 바로 다시 배포
 
 permissions:
   contents: read
