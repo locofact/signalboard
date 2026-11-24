@@ -87,6 +87,11 @@ table { width: 100%; border-collapse: collapse; }
 .chart .rsi { fill: none; stroke: var(--accent); stroke-width: 1.5; }
 .chart .hp { fill: var(--up); } .chart .hn { fill: var(--down); }
 
+.prose { max-width: 760px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px 28px; }
+.prose h2 { font-size: 18px; margin: 22px 0 8px; }
+.prose li { margin-bottom: 8px; }
+footer .links a { color: var(--mute); }
+
 footer { max-width: 1120px; margin: 0 auto; padding: 20px; border-top: 1px solid var(--line); font-size: 12px; color: var(--mute); }
 
 @media (max-width: 600px) {

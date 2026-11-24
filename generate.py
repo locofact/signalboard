@@ -20,12 +20,14 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
+from config import SITE_URL, ADSENSE_CLIENT, CONTACT_URL
 from indicators import sma, rsi, macd, last_cross, pct
 from tickers import US_INDEXES, US_TICKERS, KR_INDEXES, KR_TICKERS
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(ROOT, "site")
 SITE_NAME = "SignalBoard"
+PAGES = []  # sitemap.xml에 넣을 페이지 경로
 
 # ---------------------------------------------------------------- 데이터
 
@@ -354,10 +356,16 @@ def chart_svg(s):
 # ---------------------------------------------------------------- HTML
 
 
-def page(mk, title, desc, body, depth):
+def page(mk, title, desc, body, depth, path):
     t = T[mk] if mk else T["us"]
     up = "../" * depth
     lang = t["lang"] if mk else "en"
+    PAGES.append(path)
+    canonical = f"{SITE_URL}/{path}".replace("/index.html", "/")
+    adsense = (
+        f'<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={ADSENSE_CLIENT}" crossorigin="anonymous"></script>'
+        if ADSENSE_CLIENT else ""
+    )
     return f"""<!doctype html>
 <html lang="{lang}">
 <head>
@@ -365,7 +373,12 @@ def page(mk, title, desc, body, depth):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
 <meta name="description" content="{esc(desc)}">
+<link rel="canonical" href="{esc(canonical)}">
+<meta property="og:title" content="{esc(title)}">
+<meta property="og:description" content="{esc(desc)}">
+<meta property="og:url" content="{esc(canonical)}">
 <link rel="stylesheet" href="{up}style.css">
+{adsense}
 </head>
 <body class="mk-{mk or 'home'}">
 <header class="top">
@@ -380,6 +393,7 @@ def page(mk, title, desc, body, depth):
 </main>
 <footer>
   <p>{esc(t['disclaimer'])}</p>
+  <p class="links"><a href="{up}about.html">About</a> · <a href="{up}privacy.html">Privacy Policy</a> · <a href="{up}contact.html">Contact</a></p>
   <p class="mute">© {datetime.now().year} {SITE_NAME}</p>
 </footer>
 <script>
@@ -405,6 +419,9 @@ document.querySelectorAll('table.sortable th').forEach((th, idx) => {{
 
 
 def ad_slot(mk):
+    # 애드센스 자동 광고를 쓰면 구글이 위치를 알아서 정하므로 자리 표시는 숨깁니다.
+    if ADSENSE_CLIENT:
+        return ""
     return f'<div class="ad">{esc(T[mk]["ad"])}</div>'
 
 
@@ -481,7 +498,7 @@ def market_page(mk, stocks, indexes, lists):
 <h2 class="sec">{esc(t['all'])}</h2>
 <div class="tablewrap"><table class="full sortable"><thead><tr>{head}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>
 """
-    return page(mk, t["title"], t["desc"], body, 1)
+    return page(mk, t["title"], t["desc"], body, 1, f"{mk}/index.html")
 
 
 def stock_page(mk, s, lists):
@@ -527,7 +544,7 @@ def stock_page(mk, s, lists):
 <section class="card"><h2>{esc(t['chart'])}</h2>{chart_svg(s)}</section>
 <section class="card"><h2>{esc(t['similar'])}</h2>{mini_table(sim, mk, lambda o: rsi_badge(o['rsi']))}</section>
 """
-    return page(mk, title, desc, body, 1)
+    return page(mk, title, desc, body, 1, f"{mk}/{s['slug']}.html")
 
 
 def home_page(us_date, kr_date):
@@ -541,7 +558,85 @@ def home_page(us_date, kr_date):
   <a class="card pick" href="kr/index.html"><h2>🇰🇷 국내주식</h2><p class="mute">과매도, 골든크로스, 상승 추세 종목</p><p class="small">{kr_date} 기준</p></a>
 </div>
 """
-    return page(None, f"{SITE_NAME}: Daily Stock Signals", "Daily RSI and MACD stock signals for US and Korean markets.", body, 0)
+    return page(None, f"{SITE_NAME}: Daily Stock Signals", "Daily RSI and MACD stock signals for US and Korean markets.", body, 0, "index.html")
+
+
+# ---------------------------------------------------------------- 안내 페이지 (애드센스 심사에 필요)
+
+STATIC_PAGES = {
+    "about.html": ("About", "About SignalBoard and how our stock signals are calculated.", """
+<h1>About SignalBoard</h1>
+<p>SignalBoard is an independent website that publishes daily technical signals for major US and Korean stocks.
+After each market close, we automatically calculate common technical indicators from end-of-day prices and
+organize the results into simple screens.</p>
+<h2>How signals are calculated</h2>
+<ul>
+  <li><b>RSI (14)</b>: Relative Strength Index using Wilder's smoothing over 14 trading days.
+      Readings below 30 are commonly described as oversold and above 70 as overbought.</li>
+  <li><b>MACD (12, 26, 9)</b>: The difference between the 12-day and 26-day exponential moving averages,
+      compared with its 9-day signal line. A crossover above the signal line is listed as a bullish crossover.</li>
+  <li><b>Trend</b>: A stock is labeled as in an uptrend when its price is above its 20-day moving average,
+      which is above its 50-day moving average, and the reverse for a downtrend.</li>
+</ul>
+<h2>Important</h2>
+<p>All content is for informational and educational purposes only and is not financial advice.
+Signals are based solely on past prices and do not predict future returns.
+Data may be delayed or contain errors. Always do your own research before making investment decisions.</p>
+"""),
+    "privacy.html": ("Privacy Policy", "SignalBoard privacy policy.", """
+<h1>Privacy Policy</h1>
+<p class="mute small">Last updated: {date}</p>
+<p>This Privacy Policy explains how SignalBoard ("we", "us") handles information when you visit this website.</p>
+<h2>Information we collect</h2>
+<p>We do not ask you to create an account and we do not collect personal information such as your name or email address
+through this website. Like most websites, our hosting provider may automatically log basic technical information
+such as your IP address, browser type and pages visited, for security and operational purposes.</p>
+<h2>Cookies and advertising</h2>
+<p>We may use third-party advertising services, including Google AdSense, to display ads.
+Third-party vendors, including Google, use cookies to serve ads based on your prior visits to this website or other websites.
+Google's use of advertising cookies enables it and its partners to serve ads based on your visits to this and other sites on the internet.</p>
+<p>You can opt out of personalized advertising by visiting
+<a href="https://adssettings.google.com" rel="nofollow">Google Ads Settings</a>, or opt out of some third-party vendors'
+use of cookies by visiting <a href="https://www.aboutads.info/choices/" rel="nofollow">www.aboutads.info</a>.
+For more information, see <a href="https://policies.google.com/technologies/ads" rel="nofollow">how Google uses information from sites that use its services</a>.</p>
+<h2>Analytics</h2>
+<p>We may use analytics tools to understand how visitors use the site in aggregate. These tools may use cookies.</p>
+<h2>Children's privacy</h2>
+<p>This website is not directed to children under 13, and we do not knowingly collect information from children.</p>
+<h2>Changes</h2>
+<p>We may update this policy from time to time. Changes will be posted on this page with an updated date.</p>
+<h2>Contact</h2>
+<p>If you have questions about this policy, please <a href="contact.html">contact us</a>.</p>
+"""),
+    "contact.html": ("Contact", "Contact SignalBoard.", """
+<h1>Contact</h1>
+<p>Questions, corrections or feedback are welcome.</p>
+<p><a href="{contact}">Send us a message</a></p>
+<p class="mute small">Please note that we cannot provide personal investment advice.</p>
+"""),
+}
+
+
+def static_pages():
+    today = datetime.now().strftime("%Y-%m-%d")
+    for path, (title, desc, body) in STATIC_PAGES.items():
+        body = body.replace("{date}", today).replace("{contact}", esc(CONTACT_URL))
+        write(os.path.join(OUT, path),
+              page(None, f"{title} | {SITE_NAME}", desc, f'<div class="prose">{body}</div>', 0, path))
+
+
+def seo_files():
+    today = datetime.now().strftime("%Y-%m-%d")
+    urls = "".join(
+        f"<url><loc>{esc((SITE_URL + '/' + p).replace('/index.html', '/'))}</loc><lastmod>{today}</lastmod></url>"
+        for p in PAGES
+    )
+    write(os.path.join(OUT, "sitemap.xml"),
+          f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>')
+    write(os.path.join(OUT, "robots.txt"), f"User-agent: *\nAllow: /\nSitemap: {SITE_URL}/sitemap.xml\n")
+    if ADSENSE_CLIENT:
+        pub = ADSENSE_CLIENT.replace("ca-", "")
+        write(os.path.join(OUT, "ads.txt"), f"google.com, {pub}, DIRECT, f08c47fec0942fa0\n")
 
 
 # ---------------------------------------------------------------- 실행
@@ -582,6 +677,8 @@ def main():
     us_date = build_market("us", US_TICKERS, US_INDEXES)
     kr_date = build_market("kr", KR_TICKERS, KR_INDEXES)
     write(os.path.join(OUT, "index.html"), home_page(us_date, kr_date))
+    static_pages()
+    seo_files()
     shutil.copy(os.path.join(ROOT, "style.css"), os.path.join(OUT, "style.css"))
     print("완료:", os.path.join(OUT, "index.html"))
 
